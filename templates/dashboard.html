@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Real-Time Threat Detection System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="top-navbar">
+        <div class="brand">
+            <div class="brand-icon">🛡️</div>
+            <span>ThreatDetect AI <span style="font-weight: 300; font-size: 0.85rem; color: var(--accent-cyan);">[LSTM Engine]</span></span>
+        </div>
+
+        <div class="nav-controls">
+            <div class="mode-toggle">
+                <span id="modeLabel" style="color: var(--accent-cyan); font-weight: 600;">Simulation Mode</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="simToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <a href="/logout" class="btn-logout">Logout</a>
+        </div>
+    </nav>
+
+    <!-- Main Dashboard Body -->
+    <div class="dashboard-container">
+        
+        <!-- Summary Stat Cards -->
+        <div class="stats-grid">
+            <div class="glass-card stat-card">
+                <span class="title">Total Monitored Packets</span>
+                <span class="value" id="statTotalPackets">0</span>
+                <span class="sub-value" id="statPacketSpeed">Network Traffic Ingestion</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <span class="title">Total Threats Detected</span>
+                <span class="value" id="statTotalThreats" style="color: var(--status-critical);">0</span>
+                <span class="sub-value">Flagged by Deep Learning</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <span class="title">Current Threat Class</span>
+                <span class="value" id="statCurrentThreat" style="font-size: 1.4rem;">Normal</span>
+                <span class="sub-value" id="statLatestTime">Latest: --:--:--</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <span class="title">Model Confidence</span>
+                <span class="value" id="statConfidence" style="color: var(--accent-cyan);">98.5%</span>
+                <span class="sub-value">LSTM Inference Score</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <span class="title">Active Database Engine</span>
+                <span class="value" id="statDbType" style="font-size: 1.2rem; color: #a7f3d0;">SQLite Fallback</span>
+                <span class="sub-value">Storage Layer</span>
+            </div>
+        </div>
+
+        <!-- Charts & Live Alert Section -->
+        <div class="charts-split">
+            
+            <!-- Real-Time Threat Distribution Graph -->
+            <div class="glass-card">
+                <div class="chart-header">
+                    <span class="chart-title">Real-Time Threat Traffic Distribution</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Auto-updating every 2 seconds</span>
+                </div>
+                <div style="height: 320px; position: relative;">
+                    <canvas id="threatChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Current Threat Alert Panel -->
+            <div class="glass-card alert-panel">
+                <div>
+                    <div class="chart-header">
+                        <span class="chart-title">Current Threat Status</span>
+                        <span id="alertStatusBadge" class="badge badge-normal">NORMAL</span>
+                    </div>
+
+                    <div id="threatAlertBox" class="threat-alert-box">
+                        <div class="alert-type-header">
+                            <span id="alertThreatType">Normal Traffic</span>
+                            <span id="alertConfidence">98.5%</span>
+                        </div>
+                        
+                        <div class="threat-details-list">
+                            <div>Source IP: <span id="alertSrcIp">192.168.1.105</span></div>
+                            <div>Destination IP: <span id="alertDstIp">172.217.16.206</span></div>
+                            <div>Protocol: <span id="alertProtocol">TCP</span></div>
+                            <div>Detection Time: <span id="alertTime">--:--:--</span></div>
+                            <div>Status Severity: <span id="alertSeverity">Clear</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 16px;">
+                    Model: Keras LSTM (41 NSL-KDD Features)
+                </div>
+            </div>
+        </div>
+
+        <!-- Searchable & Filterable Threat Log Table -->
+        <div class="glass-card table-section">
+            <div class="chart-header">
+                <span class="chart-title">MySQL Threat Detection History</span>
+                <div class="table-controls">
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search IP or Type...">
+                    
+                    <select id="typeFilter" class="select-filter">
+                        <option value="all">All Threat Classes</option>
+                        <option value="Normal">Normal</option>
+                        <option value="DoS Attack">DoS Attack</option>
+                        <option value="Probe">Probe</option>
+                        <option value="R2L Attack">R2L Attack</option>
+                        <option value="U2R Attack">U2R Attack</option>
+                    </select>
+
+                    <select id="statusFilter" class="select-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="Normal">Normal</option>
+                        <option value="Warning">Warning</option>
+                        <option value="Critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-wrapper">
+                <table class="threat-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Threat Type</th>
+                            <th>Status</th>
+                            <th>Confidence</th>
+                            <th>Source IP</th>
+                            <th>Destination IP</th>
+                            <th>Protocol</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="threatTableBody">
+                        <tr>
+                            <td colspan="9" style="text-align: center; color: var(--text-muted);">Loading threat history...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

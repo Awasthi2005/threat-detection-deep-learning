@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RNN vs BiRNN vs LSTM vs GRU: Empirical Benchmark & Gradient Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Header -->
+        <header class="navbar">
+            <div class="nav-brand">
+                <div class="brand-icon">⚡</div>
+                <div>
+                    <h1>Sequence Model Benchmark</h1>
+                    <span class="sub-title">Vanilla RNN vs Bidirectional RNN vs LSTM vs GRU</span>
+                </div>
+            </div>
+            <div class="nav-meta">
+                <span class="badge sequence-badge">Seq Length: <i>T = 100</i></span>
+                <span class="badge status-badge"><span class="pulse-dot"></span> Live Metrics</span>
+            </div>
+        </header>
+
+        <!-- Key Executive Summary KPIs -->
+        <section class="kpi-grid">
+            <div class="kpi-card gradient-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Gradient Decay Dynamics</span>
+                    <span class="kpi-icon">📉</span>
+                </div>
+                <div class="kpi-value" id="kpi-gradient-vanishing">Severe Decay</div>
+                <p class="kpi-desc">Vanilla RNN gradient norm drops by <strong id="kpi-rnn-decay">~95%</strong> compared to stable LSTM/GRU gating.</p>
+            </div>
+
+            <div class="kpi-card accuracy-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Top Performing Architecture</span>
+                    <span class="kpi-icon">🏆</span>
+                </div>
+                <div class="kpi-value" id="kpi-top-model">BiRNN / LSTM</div>
+                <p class="kpi-desc">Peak Accuracy: <strong id="kpi-top-acc">--%</strong> | Macro F1: <strong id="kpi-top-f1">--%</strong></p>
+            </div>
+
+            <div class="kpi-card params-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Parameter Efficiency</span>
+                    <span class="kpi-icon">⚙️</span>
+                </div>
+                <div class="kpi-value" id="kpi-param-ratio">LSTM (4x Params)</div>
+                <p class="kpi-desc">GRU saves <strong id="kpi-gru-saving">~25% params</strong> vs LSTM while matching accuracy.</p>
+            </div>
+
+            <div class="kpi-card speed-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Training Speed Winner</span>
+                    <span class="kpi-icon">⏱️</span>
+                </div>
+                <div class="kpi-value" id="kpi-fastest-model">Vanilla RNN</div>
+                <p class="kpi-desc">Fastest epoch runtime, but lacks gradient highway for long context.</p>
+            </div>
+        </section>
+
+        <!-- Interactive Architecture Controls -->
+        <section class="controls-bar">
+            <div class="filter-group">
+                <span class="filter-label">Toggle Models:</span>
+                <button class="chip active" data-model="Vanilla RNN" onclick="toggleModel('Vanilla RNN', this)">
+                    <span class="color-dot rnn-dot"></span> Vanilla RNN
+                </button>
+                <button class="chip active" data-model="Bidirectional RNN" onclick="toggleModel('Bidirectional RNN', this)">
+                    <span class="color-dot birnn-dot"></span> BiRNN
+                </button>
+                <button class="chip active" data-model="LSTM" onclick="toggleModel('LSTM', this)">
+                    <span class="color-dot lstm-dot"></span> LSTM
+                </button>
+                <button class="chip active" data-model="GRU" onclick="toggleModel('GRU', this)">
+                    <span class="color-dot gru-dot"></span> GRU
+                </button>
+            </div>
+
+            <div class="filter-group">
+                <span class="filter-label">Metric View:</span>
+                <button class="view-btn active" onclick="switchView('overview', this)">Overview</button>
+                <button class="view-btn" onclick="switchView('gradients', this)">Gradient Behavior</button>
+                <button class="view-btn" onclick="switchView('theory', this)">Theory & Formulas</button>
+            </div>
+        </section>
+
+        <!-- Main Dashboard Content Grid -->
+        <main class="dashboard-main">
+            <!-- Chart Row 1: Gradient Norms & Accuracy -->
+            <div class="chart-grid">
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <h3>Backpropagation Gradient Norm Trajectory (||∇W_hh||₂)</h3>
+                        <span class="info-tooltip" title="Tracks recurrent weight gradients per epoch during backpropagation over 100 timesteps">ℹ️</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="gradNormChart"></canvas>
+                    </div>
+                    <div class="chart-caption">
+                        <strong>Observed Behavior:</strong> Vanilla RNN shows rapid gradient norm attenuation (vanishing gradient) due to repeated matrix multiplication of sub-unity eigenvalues over $T=100$. LSTM and GRU maintain stable gradient norms.
+                    </div>
+                </div>
+
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <h3>Validation Accuracy & Macro F1-Score</h3>
+                        <span class="info-tooltip" title="Validation performance curves over 25 training epochs">ℹ️</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="accuracyChart"></canvas>
+                    </div>
+                    <div class="chart-caption">
+                        <strong>Performance Gap:</strong> BiRNN and LSTM/GRU achieve high accuracy and F1 score on long sequences, whereas Vanilla RNN struggles due to memory horizon breakdown.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart Row 2: Loss Curves & Complexity Metrics -->
+            <div class="chart-grid">
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <h3>Training & Validation Loss Convergence</h3>
+                        <span class="info-tooltip" title="Cross-entropy loss trajectory per epoch">ℹ️</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="lossChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="glass-panel chart-panel">
+                    <div class="panel-header">
+                        <h3>Model Complexity & Speed Breakdown</h3>
+                        <span class="info-tooltip" title="Parameter count vs Total Training Time (seconds)">ℹ️</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="complexityChart"></canvas>
+            <!-- Interactive Architecture & Gradient Calculator Form -->
+            <section class="glass-panel calculator-section" id="calculator-section">
+                <div class="panel-header">
+                    <h3>🧮 Interactive Model Parameter & Gradient Calculator</h3>
+                    <span class="badge">Enter Custom Sequence Values</span>
+                </div>
+                <div class="calculator-inputs-grid">
+                    <div class="input-field">
+                        <label for="input-seq-len">Sequence Length ($T$):</label>
+                        <input type="number" id="input-seq-len" value="100" min="1" max="5000" oninput="calculateCustomValues()">
+                    </div>
+                    <div class="input-field">
+                        <label for="input-dim">Input Feature Dim ($d$):</label>
+                        <input type="number" id="input-dim" value="10" min="1" max="1024" oninput="calculateCustomValues()">
+                    </div>
+                    <div class="input-field">
+                        <label for="input-hidden-dim">Hidden State Dim ($h$):</label>
+                        <input type="number" id="input-hidden-dim" value="64" min="1" max="2048" oninput="calculateCustomValues()">
+                    </div>
+                    <div class="input-field">
+                        <label for="input-num-classes">Number of Classes ($c$):</label>
+                        <input type="number" id="input-num-classes" value="4" min="2" max="1000" oninput="calculateCustomValues()">
+                    </div>
+                    <div class="input-field">
+                        <label for="input-decay-rate">Recurrent Decay ($\lambda$):</label>
+                        <input type="number" id="input-decay-rate" value="0.95" step="0.01" min="0.5" max="1.0" oninput="calculateCustomValues()">
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="benchmark-table calc-table">
+                        <thead>
+                            <tr>
+                                <th>Architecture</th>
+                                <th>Calculated Params</th>
+                                <th>FLOPs / Sequence</th>
+                                <th>Est. Memory (KB)</th>
+                                <th>Gradient Retention ($\lambda^T$)</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calcTableBody">
+                            <!-- Populated dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Image Upload, Visual Comparison & Sequential Calculator Section -->
+            <section class="glass-panel image-upload-section" id="image-section">
+                <div class="panel-header">
+                    <h3>🖼️ Image Upload, Comparison & Sequential Calculator</h3>
+                    <span class="badge">Upload Images to Calculate Model Specs</span>
+                </div>
+
+                <div class="upload-controls-grid">
+                    <div class="dropzone" id="dropzone" onclick="document.getElementById('image-file-input').click()">
+                        <div class="upload-icon">📁</div>
+                        <h4>Click or Drag & Drop Images Here</h4>
+                        <p class="upload-hint">Supports PNG, JPG, WEBP, SVG images for comparative analysis</p>
+                        <input type="file" id="image-file-input" accept="image/*" multiple style="display: none;" onchange="handleImageUpload(event)">
+                    </div>
+
+                    <div class="upload-options-card">
+                        <h4>Sequence Mapping Rules</h4>
+                        <div class="option-field">
+                            <label for="seq-mapping-mode">Map Image Dimensions to Sequence:</label>
+                            <select id="seq-mapping-mode" onchange="processUploadedImages()">
+                                <option value="width-is-t">Sequence Length T = Image Width | Feature Vector d = Height × 3</option>
+                                <option value="height-is-t">Sequence Length T = Image Height | Feature Vector d = Width × 3</option>
+                                <option value="patches">Patches (16x16) T = (W/16 × H/16) | Feature Vector d = 256 × 3</option>
+                            </select>
+                        </div>
+
+                        <div class="option-field">
+                            <label for="img-hidden-dim">Target Hidden Dimension ($h$):</label>
+                            <input type="number" id="img-hidden-dim" value="128" min="8" max="2048" oninput="processUploadedImages()">
+                        </div>
+
+                        <div class="option-field">
+                            <label for="img-num-classes">Classification Output Classes ($c$):</label>
+                            <input type="number" id="img-num-classes" value="10" min="2" max="1000" oninput="processUploadedImages()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Grid of Uploaded Images -->
+                <div class="image-gallery-grid" id="image-gallery">
+                    <div class="empty-gallery-msg">
+                        <span>📷 No images uploaded yet. Click above or select files to compare image sequence specifications.</span>
+                    </div>
+                </div>
+
+                <!-- Per-Image Sequence Calculation Table -->
+                <div class="table-wrapper" id="img-calc-table-wrapper" style="display: none;">
+                    <h4 style="margin-bottom: 12px; color: var(--text-main);">Calculated Model Requirements for Uploaded Images</h4>
+                    <table class="benchmark-table image-calc-table">
+                        <thead>
+                            <tr>
+                                <th>Image Name</th>
+                                <th>Resolution (W × H)</th>
+                                <th>Extracted (T, d)</th>
+                                <th>Vanilla RNN (Params / FLOPs)</th>
+                                <th>BiRNN (Params / FLOPs)</th>
+                                <th>LSTM (Params / FLOPs)</th>
+                                <th>GRU (Params / FLOPs)</th>
+                                <th>Grad Risk ($T$)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="imgCalcTableBody">
+                            <!-- Populated dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Full Benchmark Results Table -->
+            <section class="glass-panel table-section">
+                <div class="panel-header">
+                    <h3>Empirical Performance & Complexity Comparison Table</h3>
+                    <span class="badge">Sequence Task Length T = 100</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="benchmark-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>Architecture</th>
+                                <th>Recurrent Gates</th>
+                                <th>Param Count</th>
+                                <th>Val Accuracy</th>
+                                <th>Macro F1</th>
+                                <th>Weighted F1</th>
+                                <th>Avg Grad Norm</th>
+                                <th>Train Time</th>
+                                <th>Inference (ms/batch)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Populated dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Comprehensive Mathematical & Architectural Analysis -->
+            <section class="glass-panel analysis-section" id="theory-section">
+                <h2>In-Depth Theoretical & Architectural Analysis</h2>
+
+                <div class="analysis-grid">
+                    <!-- Vanilla RNN -->
+                    <div class="arch-card">
+                        <div class="arch-title">
+                            <span class="arch-icon rnn-bg">RNN</span>
+                            <h4>Vanilla Elman RNN</h4>
+                        </div>
+                        <div class="formula-box">
+                            $$\mathbf{h}_t = \tanh(\mathbf{W}_{ih} \mathbf{x}_t + \mathbf{b}_{ih} + \mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{b}_{hh})$$
+                        </div>
+                        <ul class="arch-details">
+                            <li><strong>Gradient Flow:</strong> $\frac{\partial \mathbf{h}_T}{\partial \mathbf{h}_t} = \prod_{k=t+1}^T \mathbf{W}_{hh}^T \text{diag}(1 - \tanh^2(\mathbf{a}_k))$.</li>
+                            <li><strong>Vanishing Gradient:</strong> If largest eigenvalue $\lambda_{\max}(\mathbf{W}_{hh}) < 1$ or $\tanh'$ saturates, gradients decay exponentially as $\gamma^{T-t} \to 0$.</li>
+                            <li><strong>Exploding Gradient:</strong> If $\lambda_{\max}(\mathbf{W}_{hh}) > 1$, gradients explode exponentially $\to \infty$, causing NaN/Inf updates without clipping.</li>
+                            <li><strong>Pros / Cons:</strong> Minimal parameters & fast compute, but incapable of capturing dependencies beyond ~15-20 timesteps.</li>
+                        </ul>
+                    </div>
+
+                    <!-- Bidirectional RNN -->
+                    <div class="arch-card">
+                        <div class="arch-title">
+                            <span class="arch-icon birnn-bg">BiRNN</span>
+                            <h4>Bidirectional RNN (BiRNN)</h4>
+                        </div>
+                        <div class="formula-box">
+                            $$\mathbf{h}_t = [\vec{\mathbf{h}}_t \,;\, \overleftarrow{\mathbf{h}}_t], \quad \vec{\mathbf{h}}_t = f(\mathbf{x}_t, \vec{\mathbf{h}}_{t-1}), \quad \overleftarrow{\mathbf{h}}_t = f(\mathbf{x}_t, \overleftarrow{\mathbf{h}}_{t+1})$$
+                        </div>
+                        <ul class="arch-details">
+                            <li><strong>Dual Recurrence:</strong> Processes sequence in forward ($1 \to T$) and reverse ($T \to 1$) directions simultaneously.</li>
+                            <li><strong>Contextual Representation:</strong> Every timestep $t$ receives complete past and future context.</li>
+                            <li><strong>Gradient Behavior:</strong> Doubles gradient paths, but individual directional paths still suffer from standard RNN vanishing gradient limits unless paired with LSTM/GRU gating.</li>
+                            <li><strong>Use Cases:</strong> Ideal for non-causal sequence tasks (NLP text classification, POS tagging, DNA sequence parsing).</li>
+                        </ul>
+                    </div>
+
+                    <!-- LSTM -->
+                    <div class="arch-card">
+                        <div class="arch-title">
+                            <span class="arch-icon lstm-bg">LSTM</span>
+                            <h4>Long Short-Term Memory (LSTM)</h4>
+                        </div>
+                        <div class="formula-box">
+                            $$\begin{aligned}
+                            \mathbf{f}_t &= \sigma(\mathbf{W}_f [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f) \quad \text{(Forget Gate)} \\
+                            \mathbf{i}_t &= \sigma(\mathbf{W}_i [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_i) \quad \text{(Input Gate)} \\
+                            \mathbf{c}_t &= \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \tanh(\mathbf{W}_c [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_c) \quad \text{(Cell State)} \\
+                            \mathbf{o}_t &= \sigma(\mathbf{W}_o [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_o), \quad \mathbf{h}_t = \mathbf{o}_t \odot \tanh(\mathbf{c}_t)
+                            \end{aligned}$$
+                        </div>
+                        <ul class="arch-details">
+                            <li><strong>Constant Error Carousel:</strong> The cell state update $\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \dots$ provides an additive gradient highway where $\frac{\partial \mathbf{c}_t}{\partial \mathbf{c}_{t-1}} = \mathbf{f}_t$.</li>
+                            <li><strong>Vanishing Gradient Solution:</strong> When forget gate $\mathbf{f}_t \approx 1$, gradients propagate unimpeded across 100+ timesteps without exponential decay.</li>
+                            <li><strong>Complexity:</strong> 4 weight matrices ($W_f, W_i, W_c, W_o$), resulting in ~4x parameters over Vanilla RNN.</li>
+                        </ul>
+                    </div>
+
+                    <!-- GRU -->
+                    <div class="arch-card">
+                        <div class="arch-title">
+                            <span class="arch-icon gru-bg">GRU</span>
+                            <h4>Gated Recurrent Unit (GRU)</h4>
+                        </div>
+                        <div class="formula-box">
+                            $$\begin{aligned}
+                            \mathbf{z}_t &= \sigma(\mathbf{W}_z [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_z) \quad \text{(Update Gate)} \\
+                            \mathbf{r}_t &= \sigma(\mathbf{W}_r [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_r) \quad \text{(Reset Gate)} \\
+                            \tilde{\mathbf{h}}_t &= \tanh(\mathbf{W} [\mathbf{r}_t \odot \mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}) \\
+                            \mathbf{h}_t &= (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \tilde{\mathbf{h}}_t
+                            \end{aligned}$$
+                        </div>
+                        <ul class="arch-details">
+                            <li><strong>Streamlined Architecture:</strong> Combines cell and hidden states into a single state $\mathbf{h}_t$ using 2 gates (Reset $r_t$, Update $z_t$).</li>
+                            <li><strong>Gradient Flow:</strong> Update gate $z_t$ acts as adaptive linear interpolation. When $z_t \approx 0$, state is passed unchanged ($\mathbf{h}_t \approx \mathbf{h}_{t-1}$), preserving gradient flow.</li>
+                            <li><strong>Param Efficiency:</strong> ~25% fewer parameters than LSTM, training faster while matching accuracy on most sequence benchmarks.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MathJax for rendering math formulas -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
